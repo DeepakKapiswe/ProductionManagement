@@ -580,7 +580,6 @@ CREATE TABLE input_fixedProductionUnitLocations
     ON DELETE RESTRICT ON UPDATE CASCADE
 );
 
-/*
 CREATE TABLE aux_stageInventory
 (
     productId VARCHAR(50),
@@ -607,4 +606,3 @@ CREATE TABLE aux_stageInventory
     FOREIGN KEY (purchaseOrderId) REFERENCES input_purchaseOrderDetails (purchaseOrderId)
     ON DELETE RESTRICT ON UPDATE CASCADE
 );
-*/
