@@ -3,8 +3,7 @@ DROP DATABASE IF EXISTS productdb;
 CREATE DATABASE productdb;
 USE productdb;
 
-
-CREATE TABLE input_static_products
+CREATE TABLE input_static_products /*keep history of product prices*/
 (
     productId VARCHAR(50),
     productName VARCHAR(255) NOT NULL,
@@ -13,8 +12,6 @@ CREATE TABLE input_static_products
     CONSTRAINT PKC_input_static_products PRIMARY KEY (productId)
 );
 
-/* write a trigger to insert productprice for each productid after insert or update of price in input_static_products */
-
 CREATE TABLE aux_productPrices
 (
     productId VARCHAR(50),
@@ -22,6 +19,17 @@ CREATE TABLE aux_productPrices
     entryTimestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT PKC_input_static_products PRIMARY KEY (productId,pricePerUnit)
 );
+
+/*trigger to insert productprice for each productid after insert or update of price in input_static_products */
+
+delimiter |
+CREATE TRIGGER trigger_insertProductPrices AFTER INSERT ON input_static_products
+FOR EACH ROW
+BEGIN
+    insert into aux_productPrices (productId,pricePerUnit) values (new.productId,new.pricePerUnit);
+END;
+ |
+delimiter ;
 
 CREATE TABLE input_static_stages
 (
@@ -182,7 +190,7 @@ CREATE TABLE aux_productionUnitOutputProducts
     ON DELETE RESTRICT ON UPDATE CASCADE
 );
 
-CREATE TABLE input_static_produtionUnitCapacities
+CREATE TABLE input_static_produtionUnitCapacities /* stageId should be there*/
 (
     productionUnitId VARCHAR(50),
     productId VARCHAR (50),
@@ -210,7 +218,7 @@ CREATE TABLE input_static_productionUnitTypeStageResetTimes
 
 CREATE TABLE input_static_productExpiries
 (
-    productionUnitId VARCHAR(50),
+    productionUnitType VARCHAR(50),  /*updated*/
     stageId VARCHAR(50),
     productId VARCHAR(50),
     expiryTimeUnits INTEGER NOT NULL,
@@ -237,15 +245,43 @@ CREATE TABLE input_static_transportTimeDetails
     ON DELETE RESTRICT ON UPDATE CASCADE
 );
 
-/*
-CREATE TABLE input_static_productionUnitLocations
-(
-    productionUnitId VARCHAR(50),
-    currentLocationId VARCHAR(250),
-    CONSTRAINT PKC_ input_static_productionUnitLocations  PRIMARY KEY (employeeId)
-);
-*/
 
+CREATE TABLE input_static_locationDetails
+(
+    locationId VARCHAR (50),
+    locationPath TEXT NOT NULL,
+    CONSTRAINT PKC_input_static_locationDetails PRIMARY KEY (locationId)
+);
+
+
+/* write a trigger to get the location type of production unit before insert on input_static_productionUnitLocations*/
+CREATE TABLE input_dynamic_productionUnitLocations
+(
+    productionUnitId VARCHAR (50),
+    currentLocationId VARCHAR (50),
+    locationType VARCHAR (20) DEFAULT 'FIXED',
+    entryTimestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT PKC_input_dynamic_productionUnitLocations PRIMARY KEY (productionUnitId,currentLocationId,entryTimestamp),
+    FOREIGN KEY (productionUnitId) REFERENCES input_static_produtionUnits (productionUnitId)
+    ON DELETE RESTRICT ON UPDATE CASCADE,
+    FOREIGN KEY (currentLocationId) REFERENCES input_static_locationDetails (locationId)
+    ON DELETE RESTRICT ON UPDATE CASCADE,
+    FOREIGN KEY (locationType) REFERENCES aux_locationTypeDomain (locationType)
+    ON DELETE RESTRICT ON UPDATE CASCADE
+);
+
+/* write trigger to insert productionUnitId and currentLocationId from input_dynamic_productionUnitLocations -- keep recent records in this table*/
+
+CREATE TABLE aux_productionUnitCurrentLocations
+(
+    productionUnitId VARCHAR (50),
+    currentLocationId VARCHAR (50),
+    CONSTRAINT PKC_aux_productionUnitCurrentLocations PRIMARY KEY (productionUnitId,currentLocationId),
+    FOREIGN KEY (productionUnitId) REFERENCES input_static_produtionUnits (productionUnitId)
+    ON DELETE RESTRICT ON UPDATE CASCADE,
+    FOREIGN KEY (currentLocationId) REFERENCES input_static_locationDetails (locationId)
+    ON DELETE RESTRICT ON UPDATE CASCADE
+);
 
 CREATE TABLE input_static_employees
 (
@@ -272,6 +308,7 @@ CREATE TABLE input_dynamic_productionOrders
     ON DELETE RESTRICT ON UPDATE CASCADE
 );
 
+
 /* Through trigger extract productId and quantity from input_dynamic_productionOrders then refer it in input_productionOrderDetails */
 
 CREATE TABLE input_dynamic_productionOrderDetails
@@ -287,6 +324,20 @@ CREATE TABLE input_dynamic_productionOrderDetails
     FOREIGN KEY (productionUnitId,productId) REFERENCES aux_productionUnitOutputProducts (productionUnitId,productId)
     ON DELETE RESTRICT ON UPDATE CASCADE
 );
+
+/* write trigger to get productionOrderId , productId , productionUnitId from input_dynamic_productionOrderDetails*/
+CREATE TABLE aux_productionOrderProducts
+(
+    productionOrderId VARCHAR(50),
+    productId VARCHAR(50),
+    productionUnitId VARCHAR(50),
+    CONSTRAINT PKC_aux_productionOrderProducts PRIMARY KEY (productionOrderId,productId),
+    FOREIGN KEY (productionOrderId,productionUnitId) REFERENCES input_dynamic_productionOrders (productionOrderId,productionUnitId)
+    ON DELETE RESTRICT ON UPDATE CASCADE,
+    FOREIGN KEY (productionUnitId,productId) REFERENCES aux_productionUnitOutputProducts (productionUnitId,productId)
+    ON DELETE RESTRICT ON UPDATE CASCADE
+);
+
 /* write a trigger which on user demand will fill up output_incompleteProductionOrderDetails table*/
 CREATE TABLE output_incompleteProductionOrderDetails
 (
@@ -501,7 +552,6 @@ CREATE TABLE input_dynamic_supplyOrders
     ON DELETE RESTRICT ON UPDATE CASCADE
 );
 
-
 /* write a trigger to insert in following table for each supply order*/
 
 CREATE TABLE aux_supplyOrderConsumers
@@ -560,60 +610,6 @@ CREATE TABLE output_incompleteSupplyOrderDetails
     ON DELETE RESTRICT ON UPDATE CASCADE
 );
 
-CREATE TABLE aux_productionUnitStatusDomain
-(
-    productUnitStatus VARCHAR(50) PRIMARY KEY
-);
-
-insert into aux_productionUnitStatusDomain values('IDEAL'),('BUSY'),('MAINTENANCE');
-
-CREATE TABLE output_productionUnitStatusLog
-(
-    productionUnitId VARCHAR(50),
-    productUnitStatus VARCHAR(50),
-    statusUpdationTime TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT PKC_output_productionUnitStatusLog PRIMARY KEY (productionUnitId,productUnitStatus,statusUpdationTime),
-    FOREIGN KEY (productionUnitId) REFERENCES input_static_produtionUnits (productionUnitId)
-    ON DELETE RESTRICT ON UPDATE CASCADE
-);
-
-CREATE TABLE input_static_locationDetails
-(
-    locationId VARCHAR (50),
-    locationPath TEXT NOT NULL,
-    CONSTRAINT PKC_input_static_locationDetails PRIMARY KEY (locationId)
-);
-
-
-/* write a trigger to get the location type of production unit before insert on input_static_productionUnitLocations*/
-CREATE TABLE input_dynamic_productionUnitLocations
-(
-    productionUnitId VARCHAR (50),
-    currentLocationId VARCHAR (50),
-    locationType VARCHAR (20) DEFAULT 'FIXED',
-    entryTimestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT PKC_input_dynamic_productionUnitLocations PRIMARY KEY (productionUnitId,currentLocationId,entryTimestamp),
-    FOREIGN KEY (productionUnitId) REFERENCES input_static_produtionUnits (productionUnitId)
-    ON DELETE RESTRICT ON UPDATE CASCADE,
-    FOREIGN KEY (currentLocationId) REFERENCES input_static_locationDetails (locationId)
-    ON DELETE RESTRICT ON UPDATE CASCADE,
-    FOREIGN KEY (locationType) REFERENCES aux_locationTypeDomain (locationType)
-    ON DELETE RESTRICT ON UPDATE CASCADE
-);
-
-/* write trigger to insert productionUnitId and currentLocationId from input_dynamic_productionUnitLocations -- keep recent records in this table*/
-
-CREATE TABLE aux_productionUnitCurrentLocations
-(
-    productionUnitId VARCHAR (50),
-    currentLocationId VARCHAR (50),
-    CONSTRAINT PKC_aux_productionUnitCurrentLocations PRIMARY KEY (productionUnitId,currentLocationId),
-    FOREIGN KEY (productionUnitId) REFERENCES input_static_produtionUnits (productionUnitId)
-    ON DELETE RESTRICT ON UPDATE CASCADE,
-    FOREIGN KEY (currentLocationId) REFERENCES input_static_locationDetails (locationId)
-    ON DELETE RESTRICT ON UPDATE CASCADE
-);
-
 CREATE TABLE aux_productInventory
 (
     productId VARCHAR(50),
@@ -641,8 +637,69 @@ CREATE TABLE aux_productInventory
     FOREIGN KEY (supplierProductionUnitId,productId) REFERENCES aux_productionUnitOutputProducts (productionUnitId,productId)
     ON DELETE RESTRICT ON UPDATE CASCADE
 );
-/*
-CREATE TABLE output_productArrivalLog
-();
 
-*/
+CREATE TABLE output_productInventoryLog  /*loading employee unloading employee*/
+(
+    productId VARCHAR(50),
+    productionUnitId VARCHAR(50),
+    quantity INTEGER NOT NULL,
+    manufactureDate DATE NOT NULL,
+    expiryDate DATE NOT NULL,
+    locationId VARCHAR(50) NOT NULL,
+    price INTEGER NOT NULL,
+    productArrivalTime DATE NOT NULL,
+    manufacturingCode VARCHAR(250) NOT NULL,
+    consumerOrderId VARCHAR(50),
+    supplierProductionUnitId VARCHAR(50),
+    movementType VARCHAR (20) NOT NULL,
+    entryTimestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT PKC_output_productArrivalLog PRIMARY KEY (productId,productionUnitId,manufacturingCode,locationId,expiryDate,productArrivalTime),
+    CONSTRAINT CHK_movementType CHECK (movementType in ('ARRIVAL','DISPATCHMENT')),
+    FOREIGN KEY (productionUnitId,productId) REFERENCES aux_productionUnitProducts (productionUnitId,productId)
+    ON DELETE RESTRICT ON UPDATE CASCADE,
+    FOREIGN KEY (productionUnitId,locationId) REFERENCES aux_productionUnitCurrentLocations (productionUnitId,currentLocationId)
+    ON DELETE RESTRICT ON UPDATE CASCADE,
+    FOREIGN KEY (manufacturingCode) REFERENCES input_dynamic_manufacturingDetails (manufacturingCode)
+    ON DELETE RESTRICT ON UPDATE CASCADE,
+    FOREIGN KEY (productId,price) REFERENCES aux_productPrices (productId,pricePerUnit)
+    ON DELETE RESTRICT ON UPDATE CASCADE,
+    FOREIGN KEY (consumerOrderId) REFERENCES aux_consumerOrders (consumerOrderId)
+    ON DELETE RESTRICT ON UPDATE CASCADE,
+    FOREIGN KEY (supplierProductionUnitId,productId) REFERENCES aux_productionUnitOutputProducts (productionUnitId,productId)
+    ON DELETE RESTRICT ON UPDATE CASCADE
+);
+
+CREATE TABLE aux_productionUnitStatusDomain
+(
+    productUnitStatus VARCHAR(50) PRIMARY KEY
+);
+
+INSERT INTO aux_productionUnitStatusDomain VALUES ('IDEAL'),('BUSY'),('MAINTENANCE');
+
+CREATE TABLE input_productionUnitStatusChanges
+(
+    productionUnitId VARCHAR(50),
+    productUnitStatus VARCHAR(50),
+    statusUpdationTime TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT PKC_output_productionUnitStatusLog PRIMARY KEY (productionUnitId,productUnitStatus,statusUpdationTime),
+    FOREIGN KEY (productionUnitId) REFERENCES input_static_produtionUnits (productionUnitId)
+    ON DELETE RESTRICT ON UPDATE CASCADE
+);
+
+CREATE TABLE aux_currentProcessingProductionUnitDetails
+(
+    productionUnitId VARCHAR(50),
+    productId VARCHAR(50),
+    quantity VARCHAR(50),
+    productionOrderId VARCHAR(50),
+    processingStartTime DATE NOT NULL,
+    estimatedProcessingEndTime DATE NOT NULL,
+    CONSTRAINT PKC_aux_currentProcessingProductionUnitDetails PRIMARY KEY (productionUnitId,productId,productionOrderId,processingStartTime),
+    FOREIGN KEY (productionUnitId,productId) REFERENCES aux_productionUnitInputProducts (productionUnitId,productId)
+    ON DELETE RESTRICT ON UPDATE CASCADE,
+    FOREIGN KEY (productionOrderId,productId) REFERENCES aux_productionOrderProducts (productionOrderId,productId)
+    ON DELETE RESTRICT ON UPDATE CASCADE,
+    FOREIGN KEY (productionOrderId,productionUnitId) REFERENCES input_dynamic_productionOrders (productionOrderId,productionUnitId)
+    ON DELETE RESTRICT ON UPDATE CASCADE
+);
+
